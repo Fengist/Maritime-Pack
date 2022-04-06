@@ -1,0 +1,5 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<config>
+    <bool name="MPWLog">1</bool>
+    <bool name="KSPWLog">0</bool>
+</config>
