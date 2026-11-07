@@ -74,11 +74,13 @@ public class FAnimEngine : PartModule
 
 	public Animation aniEngine = null;
 
-	private ModuleEngines myEngine = new ModuleEngines();
+	// was "= new ModuleEngines()": constructing a MonoBehaviour with new logs a Unity warning for every
+	// part instance (prefab compile, editor, flight) and only produces a Unity-"null" object.
+	private ModuleEngines myEngine = null;
 
 	private Transform mytransform;
 
-	private ModuleResourceIntake myIntake = new ModuleResourceIntake();
+	private ModuleResourceIntake myIntake = null;
 
 	private float lastThrottle = 0f;
 
@@ -144,8 +146,20 @@ public class FAnimEngine : PartModule
 		if (partType == "Engine")
 		{
 			myEngine = ((IEnumerable)((PartModule)this).part.Modules).OfType<ModuleEngines>().FirstOrDefault();
-			mytransform = ((PartModule)this).part.FindModelTransform(myEngine.thrustVectorTransformName);
-			thrustRotation = mytransform.localRotation;
+			// guard: a part declaring partType = Engine without an engine module (or with a renamed thrust
+			// transform) threw a NullReferenceException here in OnStartFinished, in the editor and in flight
+			if ((Object)(object)myEngine != (Object)null)
+			{
+				mytransform = ((PartModule)this).part.FindModelTransform(myEngine.thrustVectorTransformName);
+			}
+			else
+			{
+				Debug.Log((object)("[Maritime Pack] (aniEngine) partType = Engine but no engine module on " + ((Object)((PartModule)this).part).name));
+			}
+			if ((Object)(object)mytransform != (Object)null)
+			{
+				thrustRotation = mytransform.localRotation;
+			}
 			if (useRotorDiscSwap)
 			{
 				Debug.Log((object)"[Maritime Pack] (aniEngine) Disc swapping active.");
@@ -214,6 +228,10 @@ public class FAnimEngine : PartModule
 	private float CheckDirection()
 	{
 		float num = 1f;
+		if ((Object)(object)mytransform == (Object)null)
+		{
+			return lastdirection;
+		}
 		Quaternion localRotation = mytransform.localRotation;
 		if (!(thrustRotation == localRotation))
 		{
@@ -250,7 +268,13 @@ public class FAnimEngine : PartModule
 
 	public void FixedUpdate()
 	{
-		if (!HighLogic.LoadedSceneIsFlight || !loadComplete || ((Object)(object)myEngine == (Object)null && (Object)(object)myIntake == (Object)null && partType != "Throttle" && partType != "Stirling" && partType != "Battery") || animationName == "null" || !((PartModule)this).vessel.isActiveVessel || !((PartModule)this).vessel.isActiveVessel)
+		if (!HighLogic.LoadedSceneIsFlight || !loadComplete || (Object)(object)((PartModule)this).vessel == (Object)null || ((Object)(object)myEngine == (Object)null && (Object)(object)myIntake == (Object)null && partType != "Throttle" && partType != "Stirling" && partType != "Battery") || animationName == "null" || !((PartModule)this).vessel.isActiveVessel)
+		{
+			return;
+		}
+		// was: NullReferenceException every physics frame when the engine/intake module or the animation
+		// named in the cfg is missing
+		if ((partType == "Engine" && (Object)(object)myEngine == (Object)null) || (partType == "Intake" && (Object)(object)myIntake == (Object)null) || (Object)(object)aniEngine == (Object)null)
 		{
 			return;
 		}
@@ -278,13 +302,13 @@ public class FAnimEngine : PartModule
 		}
 		if (!(partType == "Battery"))
 		{
-			num = ((!syncThrottle) ? ((double)myEngine.normalizedThrustOutput) : ((double)FlightInputHandler.state.mainThrottle));
+			num = ((!syncThrottle) ? (((Object)(object)myEngine != (Object)null) ? ((double)myEngine.normalizedThrustOutput) : 0.0) : ((double)FlightInputHandler.state.mainThrottle));
 		}
 		else
 		{
 			double resourceTotal = FengistAnimFunctions.GetResourceTotal(FlightGlobals.ActiveVessel, "ElectricCharge");
 			double resourceMax = FengistAnimFunctions.GetResourceMax(FlightGlobals.ActiveVessel, "ElectricCharge");
-			num = resourceTotal / resourceMax;
+			num = ((resourceMax > 0.0) ? (resourceTotal / resourceMax) : 0.0); // NaN on vessels without EC storage
 		}
 		float num2 = 1f;
 		if (detectReverseThrust)
