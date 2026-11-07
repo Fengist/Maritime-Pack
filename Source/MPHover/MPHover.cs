@@ -52,7 +52,8 @@ namespace MPHover
         {
             Debug.Log("[FS Hover] Init");
 
-            if (HighLogic.LoadedSceneIsFlight)
+            // vessel can be null when the part is initialised outside a fully loaded vessel
+            if (HighLogic.LoadedSceneIsFlight && this.vessel != null && this.vessel.parts != null)
             {
                 var partHeightQuery = new PartHeightQuery(float.MaxValue);
                 int count = this.vessel.parts.Count;
@@ -110,6 +111,9 @@ namespace MPHover
             float Height = 10, GD = 10, SD = 10;
             RaycastHit HoverRay;
 
+            if (FlightGlobals.currentMainBody == null)
+                return Height;
+
             Vector3 geeDir = FlightGlobals.getGeeForceAtPosition(LiftPos).normalized;
 
             if (Physics.Raycast(LiftPos, geeDir, out HoverRay, maxHoverDist + 10, layermask))
@@ -145,9 +149,34 @@ namespace MPHover
         {
         }
 
+        private bool vesselListDirty = true;
+
         public void Awake()
         {
-            lastVesselCount = 0;            
+            lastVesselCount = 0;
+        }
+
+        public void Start()
+        {
+            // FlightGlobals.Vessels.Count does not change when a vessel comes into physics range or is
+            // docked/undocked/split, so also rebuild the list on these events.
+            GameEvents.onVesselLoaded.Add(OnVesselListChanged);
+            GameEvents.onVesselCreate.Add(OnVesselListChanged);
+            GameEvents.onVesselWasModified.Add(OnVesselListChanged);
+            GameEvents.onVesselDestroy.Add(OnVesselListChanged);
+        }
+
+        public void OnDestroy()
+        {
+            GameEvents.onVesselLoaded.Remove(OnVesselListChanged);
+            GameEvents.onVesselCreate.Remove(OnVesselListChanged);
+            GameEvents.onVesselWasModified.Remove(OnVesselListChanged);
+            GameEvents.onVesselDestroy.Remove(OnVesselListChanged);
+        }
+
+        private void OnVesselListChanged(Vessel v)
+        {
+            vesselListDirty = true;
         }
 
         public void alterHEVesselList()
@@ -156,27 +185,37 @@ namespace MPHover
 
             foreach (Vessel aVessel in FlightGlobals.Vessels)
             {
+                if (aVessel == null || !aVessel.loaded || aVessel.Parts == null)
+                    continue;
 
+                bool found = false;
                 foreach (Part aPart in aVessel.Parts)
                 {
-
+                    if (aPart == null)
+                        continue;
                     foreach (PartModule aModule in aPart.Modules)
                     {
                         if (aModule is MPHoverEngine)
                         {
+                            // was: added once per hover engine, so a craft with two engines was listed twice
                             allVesselsWithHE.Add(aVessel);
+                            found = true;
+                            break;
                         }
                     }
+                    if (found)
+                        break;
                 }
             }
             lastVesselCount = FlightGlobals.Vessels.Count;
+            vesselListDirty = false;
         }
 
         public void FixedUpdate()
         {
-            if (HighLogic.LoadedSceneIsFlight)
+            if (HighLogic.LoadedSceneIsFlight && FlightGlobals.ready && FlightGlobals.Vessels != null)
             {
-                if (FlightGlobals.Vessels.Count != lastVesselCount)
+                if (vesselListDirty || FlightGlobals.Vessels.Count != lastVesselCount)
                 {
                     alterHEVesselList();
                 }
@@ -188,20 +227,24 @@ namespace MPHover
         {
             int totalThrust = 0;
 
-            foreach (Vessel aVessel in FlightGlobals.Vessels)
+            // was: every part module of every vessel in the game, every physics frame. The list built by
+            // alterHEVesselList (previously unused) only holds loaded vessels with a hover engine.
+            for (int v = 0; v < allVesselsWithHE.Count; v++)
             {
+                Vessel aVessel = allVesselsWithHE[v];
+                if (aVessel == null || !aVessel.loaded || aVessel.packed || aVessel.Parts == null)
+                    continue;
                 totalThrust = 0;
                 foreach (Part aPart in aVessel.Parts)
                 {
+                    if (aPart == null)
+                        continue;
                     foreach (PartModule aModule in aPart.Modules)
                     {
-                        if (aModule is MPHoverEngine)
+                        MPHoverEngine thisHoverEngine = aModule as MPHoverEngine;
+                        if (thisHoverEngine != null && thisHoverEngine.liftEngineActive)
                         {
-                            MPHoverEngine thisHoverEngine = aModule.GetComponent<MPHoverEngine>();
-                            if (thisHoverEngine.liftEngineActive)
-                            {
-                                totalThrust += thisHoverEngine.liftThrust;
-                            }
+                            totalThrust += thisHoverEngine.liftThrust;
                         }
                     }
                 }
@@ -217,7 +260,12 @@ namespace MPHover
 
             Rigidbody rb;
 
-            Vector3 thisWayUp = (FlightGlobals.ActiveVessel.rootPart.transform.position - FlightGlobals.ActiveVessel.mainBody.position).normalized;
+            // was: FlightGlobals.ActiveVessel.rootPart / mainBody - NullReferenceException whenever there is no
+            // active vessel for a frame (vessel switch, active vessel destroyed), and the wrong "up" for any
+            // hovercraft that is not the active vessel.
+            if (affectVessel == null || affectVessel.mainBody == null || affectVessel.Parts == null)
+                return;
+            Vector3 thisWayUp = (affectVessel.transform.position - affectVessel.mainBody.position).normalized;
 
             transformList.Clear();
             rbList.Clear();
@@ -225,15 +273,22 @@ namespace MPHover
 
             foreach (Part aPart in affectVessel.Parts)
             {
+                if (aPart == null)
+                    continue;
                 foreach (PartModule aModule in aPart.Modules)
                 {
-                    if (aModule is MPHoverSkirt)
+                    MPHoverSkirt thisHoverSkirt = aModule as MPHoverSkirt;
+                    if (thisHoverSkirt != null)
                     {
-                        MPHoverSkirt thisHoverSkirt = aModule.GetComponent<MPHoverSkirt>();
+                        // prefer the part's live rigidbody over the one cached in OnStart
+                        Rigidbody skirtRb = aPart.rb;
                         for (int i = 0; i < thisHoverSkirt.transformList.Count; i++)
                         {
+                            Rigidbody r = skirtRb != null ? skirtRb : thisHoverSkirt.rbList[i];
+                            if (thisHoverSkirt.transformList[i] == null || r == null)
+                                continue;
                             transformList.Add(thisHoverSkirt.transformList[i]);
-                            rbList.Add(thisHoverSkirt.rbList[i]);
+                            rbList.Add(r);
                             heightList.Add(thisHoverSkirt.heightList[i]);
                         }
                     }
@@ -241,6 +296,9 @@ namespace MPHover
             }
 
             //Debug.Log(affectVessel.name);
+
+            if (transformList.Count == 0)
+                return; // no usable skirts: nothing to push on (and avoids dividing by zero below)
 
             float thrustToAdd = 0f;
             float totalHeight = 0f;
@@ -303,11 +361,14 @@ namespace MPHover
                 float totalHeight = 0;
                 for (int i = 0; i < transformList.Count; i++)
                 {
+                    if (transformList[i] == null)
+                        continue;
                     var hoverheight = FSHoverDoLift.CalculateHoverHeight(transformList[i].position);
                     totalHeight += hoverheight;
                     heightList[i] = hoverheight;
                 }
-                aveAlt = totalHeight / transformList.Count;
+                if (transformList.Count > 0)
+                    aveAlt = totalHeight / transformList.Count; // was NaN (persisted to the save) without lift transforms
             }
         }
 
