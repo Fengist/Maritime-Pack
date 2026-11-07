@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- MPUtils for KSP 1.12.x. Shared settings and KSP references: ..\Directory.Build.props -->
+  <PropertyGroup>
+    <AssemblyName>MPUtils</AssemblyName>
+    <RootNamespace>MPUtils</RootNamespace>
+    <!-- AssemblyVersion uses a wildcard ("0.1.*"), which requires non-deterministic builds. -->
+    <Deterministic>false</Deterministic>
+  </PropertyGroup>
+</Project>

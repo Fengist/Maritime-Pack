@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- FengistAnim for KSP 1.12.x. Shared settings and KSP references: ..\Directory.Build.props -->
+  <PropertyGroup>
+    <AssemblyName>FengistAnim</AssemblyName>
+    <RootNamespace>FengistAnim</RootNamespace>
+  </PropertyGroup>
+</Project>

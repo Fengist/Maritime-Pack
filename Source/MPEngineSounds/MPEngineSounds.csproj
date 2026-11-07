@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- MPEngineSounds for KSP 1.12.x. Shared settings and KSP references: ..\Directory.Build.props -->
+  <PropertyGroup>
+    <AssemblyName>MPEngineSounds</AssemblyName>
+    <RootNamespace>MPEngineSounds</RootNamespace>
+  </PropertyGroup>
+</Project>
