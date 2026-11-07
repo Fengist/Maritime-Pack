@@ -123,7 +123,8 @@ public class MPengineSounds : PartModule
 
 	public bool createGroup(FXGroup group, string name, bool loop)
 	{
-		if (name != string.Empty)
+		// unset sound fields are null, not string.Empty; a null group would throw below
+		if (group != null && !string.IsNullOrEmpty(name))
 		{
 			if (!GameDatabase.Instance.ExistsAudioClip(name))
 			{
@@ -203,6 +204,32 @@ public class MPengineSounds : PartModule
 	public override void OnStart(StartState state)
 	{
 		((PartModule)this).OnStart(state);
+		// FXGroup fields are normally created by Unity serialization when the part is instantiated;
+		// make sure they exist so createGroup can never be handed a null group.
+		if (engageGroup == null)
+		{
+			engageGroup = new FXGroup("engage");
+		}
+		if (runningGroup == null)
+		{
+			runningGroup = new FXGroup("running");
+		}
+		if (powerGroup == null)
+		{
+			powerGroup = new FXGroup("power");
+		}
+		if (disengageGroup == null)
+		{
+			disengageGroup = new FXGroup("disengage");
+		}
+		if (flameoutGroup == null)
+		{
+			flameoutGroup = new FXGroup("flameout");
+		}
+		if (warningGroup == null)
+		{
+			warningGroup = new FXGroup("warning");
+		}
 		engageAssigned = createGroup(engageGroup, engage, loop: false);
 		runningAssigned = createGroup(runningGroup, running, loop: true);
 		powerAssigned = createGroup(powerGroup, power, loop: true);
@@ -234,7 +261,7 @@ public class MPengineSounds : PartModule
 	public void FixedUpdate()
 	{
 		((PartModule)this).OnFixedUpdate();
-		if (!HighLogic.LoadedSceneIsFlight || engine == null)
+		if (!HighLogic.LoadedSceneIsFlight || engine == null || (UnityEngine.Object)(object)((PartModule)this).part == (UnityEngine.Object)null)
 		{
 			return;
 		}
@@ -295,7 +322,7 @@ public class MPengineSounds : PartModule
 				}
 				else if (engine.getIgnitionState && !engine.getFlameoutState && !engageGroup.audio.isPlaying)
 				{
-					float num = engine.finalThrust / maxThrust * thrustAddedToPitch + powerPitchBase;
+					float num = ThrustFraction() * thrustAddedToPitch + powerPitchBase;
 					smoothedPowerPitch = Mathf.Lerp(smoothedPowerPitch, num, 0.1f);
 					if (!powerGroup.audio.isPlaying)
 					{
@@ -314,7 +341,7 @@ public class MPengineSounds : PartModule
 						{
 							currentPowerDelay -= Time.deltaTime;
 						}
-						float num2 = engine.finalThrust / maxThrust * thrustAddedToPitch + powerPitchBase;
+						float num2 = ThrustFraction() * thrustAddedToPitch + powerPitchBase;
 						smoothedPowerPitch = Mathf.Lerp(smoothedPowerPitch, num2, 0.1f);
 						if (currentPowerDelay <= 0f)
 						{
@@ -326,7 +353,7 @@ public class MPengineSounds : PartModule
 									currentPowerFadeIn = 1f;
 								}
 							}
-							if (engine.finalThrust / maxThrust > powerLowerThreshold || powerLowerThreshold <= 0f)
+							if (ThrustFraction() > powerLowerThreshold || powerLowerThreshold <= 0f)
 							{
 								powerGroup.audio.volume = GameSettings.SHIP_VOLUME * currentPowerFadeIn * powerVolume;
 							}
@@ -414,6 +441,16 @@ public class MPengineSounds : PartModule
 				warningCountDown = warningCooldownTime;
 			}
 		}
+	}
+
+	// finalThrust / maxThrust, but 0 instead of NaN when maxThrust is 0 (NaN pitch makes Unity log errors)
+	private float ThrustFraction()
+	{
+		if (engine == null || !(maxThrust > 0f))
+		{
+			return 0f;
+		}
+		return engine.finalThrust / maxThrust;
 	}
 
 	public void OnGUI()

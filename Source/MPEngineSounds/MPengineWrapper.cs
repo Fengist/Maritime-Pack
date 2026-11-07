@@ -209,7 +209,7 @@ internal class MPengineWrapper
 		}
 	}
 
-	public float finalThrustNormalized => finalThrust / maxThrust;
+	public float finalThrustNormalized => (maxThrust > 0f) ? (finalThrust / maxThrust) : 0f;
 
 	public bool throttleLocked
 	{
@@ -245,7 +245,9 @@ internal class MPengineWrapper
 			return;
 		}
 		engineFX = ((IEnumerable)part.Modules).OfType<ModuleEnginesFX>().FirstOrDefault();
-		type = EngineType.ModuleEngineFX;
+		// was: type = ModuleEngineFX unconditionally. On a part without any engine module every property
+		// getter then dereferenced a null engineFX (NullReferenceException in OnStart and every FixedUpdate).
+		type = (((Object)(object)engineFX != (Object)null) ? EngineType.ModuleEngineFX : EngineType.NONE);
 	}
 
 	public MPengineWrapper(Part part, string name)
