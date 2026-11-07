@@ -15,16 +15,20 @@ namespace MPUtils
 
     public class ModuleLayeredAnimator : ModuleAnimateGeneric
     {
-        [KSPField]
-        public int layer = 1;
-
+        // KSP 1.12's ModuleAnimateGeneric already declares [KSPField] int layer (and applies it itself).
+        // Re-declaring it here hid the base field (two "layer" KSPFields), and this OnStart never
+        // called base.OnStart, so the animation module was left uninitialised (anim could be null).
         public ModuleLayeredAnimator()
         {
         }
 
         public override void OnStart(StartState state)
         {
-            this.anim[this.animationName].layer = layer;
+            base.OnStart(state);
+            if (this.anim != null && !string.IsNullOrEmpty(this.animationName) && this.anim[this.animationName] != null)
+            {
+                this.anim[this.animationName].layer = layer;
+            }
         }
     }
 
@@ -74,9 +78,11 @@ namespace MPUtils
 
         private double logdelay = 0.0f;
         public Animation aniEngine = null; //the animation
-        private ModuleEngines myEngine = new ModuleEngines();  //the first or default engine found in the part
+        // was "= new ModuleEngines()" / "= new ModuleResourceIntake()": creating MonoBehaviours with new
+        // logs a Unity warning for every part instance and yields Unity-"null" objects anyway.
+        private ModuleEngines myEngine = null;  //the first or default engine found in the part
         private Transform mytransform;
-        private ModuleResourceIntake myIntake = new ModuleResourceIntake();
+        private ModuleResourceIntake myIntake = null;
         private float lastThrottle = 0;  //tracks the last throttle position. Always 0 or 1 for non sync'd engines
         private Quaternion startRotation = new Quaternion(0, 0, 0, 0);
         private float lastdirection = 1.0f;
@@ -141,8 +147,18 @@ namespace MPUtils
                 if (partType == "Engine")
                 {
                     myEngine = part.Modules.OfType<ModuleEngines>().FirstOrDefault();
-                    mytransform = part.FindModelTransform(myEngine.thrustVectorTransformName);
-                    startRotation = mytransform.localRotation;
+                    if (myEngine == null)
+                    {
+                        MPLog.Writelog("[Maritime Pack] (aniEngine) partType = Engine but no engine module on " + part.name);
+                    }
+                    else
+                    {
+                        mytransform = part.FindModelTransform(myEngine.thrustVectorTransformName);
+                    }
+                    if (mytransform != null)
+                    {
+                        startRotation = mytransform.localRotation;
+                    }
                     if (useRotorDiscSwap == true)
                     {
                         MPLog.Writelog("[Maritime Pack] (aniEngine) Disc swapping active.");
@@ -210,7 +226,7 @@ namespace MPUtils
         private float CheckDirection()
         {
             float newdirection = 1.0f;
-            if (detectReverseThrust == true)
+            if (detectReverseThrust == true && mytransform != null)
             {
                 if (startRotation.x != mytransform.localRotation.x)
                 {
@@ -249,7 +265,12 @@ namespace MPUtils
         public void FixedUpdate()
         {
             if (!HighLogic.LoadedSceneIsFlight ) { return; }
-            if (myEngine == null && myIntake == null && partType != "Throttle" && partType != "Stirling" && partType != "Battery" || animationName == "null" || !vessel.isActiveVessel)
+            if (vessel == null || myEngine == null && myIntake == null && partType != "Throttle" && partType != "Stirling" && partType != "Battery" || animationName == "null" || !vessel.isActiveVessel)
+            {
+                return;
+            }
+            // missing modules/animation used to throw every physics frame
+            if ((partType == "Engine" && myEngine == null) || (partType == "Intake" && myIntake == null) || aniEngine == null)
             {
                 return;
             }
@@ -275,7 +296,7 @@ namespace MPUtils
                 {
                     double rTotal = MPFunctions.GetResourceTotal(FlightGlobals.ActiveVessel, "ElectricCharge");
                     double rMax = MPFunctions.GetResourceMax(FlightGlobals.ActiveVessel, "ElectricCharge");
-                    thisenergy = rTotal / rMax;
+                    thisenergy = rMax > 0 ? rTotal / rMax : 0; // avoid NaN on vessels without EC storage
                  }
                 else
                 {
@@ -289,7 +310,7 @@ namespace MPUtils
                         if (syncThrust)
                         {
                             float direction = CheckDirection();
-                            thisenergy = myEngine.normalizedThrustOutput;
+                            thisenergy = myEngine != null ? myEngine.normalizedThrustOutput : 0;
                             Play_Anim(animationName, (float)thisenergy * direction, 0.0f);
                             return;
                         }
@@ -341,7 +362,7 @@ namespace MPUtils
                     if (syncThrust)
                     {
                         float direction = CheckDirection();
-                        thisenergy = myEngine.normalizedThrustOutput;
+                        thisenergy = myEngine != null ? myEngine.normalizedThrustOutput : 0;
                         if (loopAnim == true)
                         {
                             Play_Anim(animationName, (float)thisenergy, 0.0f);

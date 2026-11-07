@@ -207,7 +207,7 @@ namespace MaritimePack.customization
 
             //Debug.Log("refreshing UI");
 
-            if (tweakableUI == null)
+            if (tweakableUI == null && UIPartActionController.Instance != null) // no controller while a craft is being loaded
             {
                 tweakableUI = UIPartActionController.Instance.GetItem(part);
             }
@@ -240,6 +240,7 @@ namespace MaritimePack.customization
             currentPart.Resources.dict = new DictionaryValueList<int, PartResource>();
             PartResource[] partResources = currentPart.GetComponents<PartResource>();        
 
+            if (tankList == null) initializeData();
             for (int tankCount = 0; tankCount < tankList.Count; tankCount++)
             {
                 if (selectedTankSetup == tankCount)

@@ -110,7 +110,7 @@ namespace MPUtils
 
             MPLog.Writelog("[Maritime Pack] MPSub Found");
 
-            if (HighLogic.LoadedSceneIsFlight)
+            if (HighLogic.LoadedSceneIsFlight && this.vessel != null)
             {
                 // set the default pressure to all parts
                 if (currentPressure <= 0.0f)
@@ -138,11 +138,13 @@ namespace MPUtils
 
         public bool ConsumeResource (string thisresource, double amount)
         {
-            Part rPart = MPFunctions.GetResourcePart(FlightGlobals.ActiveVessel, thisresource);
-            double rTotal = MPFunctions.GetResourceTotal(FlightGlobals.ActiveVessel, pressureResource1);
-            if (rPart != null && rTotal >= amount)
+            // was: drew from FlightGlobals.ActiveVessel (wrong vessel when this sub is not active) and
+            // always checked the total of pressureResource1 instead of the requested resource
+            Part rPart = MPFunctions.GetResourcePart(this.vessel, thisresource);
+            double rTotal = MPFunctions.GetResourceTotal(this.vessel, thisresource);
+            int id = MPFunctions.GetResourceID(rPart, thisresource);
+            if (rPart != null && rTotal >= amount && id != -1)
             {
-                int id = MPFunctions.GetResourceID(rPart, thisresource);
                 double rFlow = rPart.RequestResource(id, amount, ResourceFlowMode.ALL_VESSEL);
                 if (rFlow > 0)
                 {
@@ -154,7 +156,7 @@ namespace MPUtils
 
         public void FixedUpdate()
         {
-            if (!HighLogic.LoadedSceneIsFlight)
+            if (!HighLogic.LoadedSceneIsFlight || this.vessel == null || this.vessel.parts == null)
             {
                 return;
             }
@@ -255,7 +257,7 @@ namespace MPUtils
             //}
 
             //Close Intakes if we're diving
-            if (manageIntakes && vessel.isActiveVessel && this.vessel.mainBody.ocean)
+            if (manageIntakes && vessel.isActiveVessel && this.vessel.mainBody != null && this.vessel.mainBody.ocean)
             {
                 if (this.vessel.altitude <= -1.0)
                 {

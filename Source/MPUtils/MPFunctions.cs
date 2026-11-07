@@ -99,20 +99,43 @@ namespace MPUtils
         private const string MPPath = "GameData/MPUtils/Plugins/PluginData/";
         private const string MPDebugLog = "MPLog.dat";
 
+        // Logging must never throw into game code: a missing PluginData folder, a read-only
+        // install or a locked file used to surface as exceptions inside OnStart/FixedUpdate.
+        private static bool fileLogFailed = false;
+
         public static void NewLog()
         {
-            string path = KSPUtil.ApplicationRootPath + MPPath;
-            string filepath = System.IO.Path.Combine(path, MPDebugLog);
-            System.IO.File.Delete(filepath);
+            try
+            {
+                string path = KSPUtil.ApplicationRootPath + MPPath;
+                System.IO.Directory.CreateDirectory(path);
+                string filepath = System.IO.Path.Combine(path, MPDebugLog);
+                if (System.IO.File.Exists(filepath))
+                {
+                    System.IO.File.Delete(filepath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Maritime Pack] Unable to reset MPLog.dat: " + ex.Message);
+            }
         }
 
         public static void Writelog(string thisline)
         {
-            string path = KSPUtil.ApplicationRootPath + MPPath;
-            string filepath = System.IO.Path.Combine(path, MPDebugLog);
-            if (MPConfig.MPWLog)
+            if (MPConfig.MPWLog && !fileLogFailed)
             {
-                System.IO.File.AppendAllText(filepath, DateTime.Now.ToString() + ": " + thisline + Environment.NewLine);
+                try
+                {
+                    string path = KSPUtil.ApplicationRootPath + MPPath;
+                    string filepath = System.IO.Path.Combine(path, MPDebugLog);
+                    System.IO.File.AppendAllText(filepath, DateTime.Now.ToString() + ": " + thisline + Environment.NewLine);
+                }
+                catch (Exception ex)
+                {
+                    fileLogFailed = true; // stop retrying (and spamming) for the rest of the session
+                    Debug.LogWarning("[Maritime Pack] File logging disabled: " + ex.Message);
+                }
             }
             if (MPConfig.KSPWLog)
             {
@@ -127,19 +150,27 @@ namespace MPUtils
         public static bool KSPWLog;
         public static float MPMaxDepth;
         public static bool MPDepthWarn;
-        public static bool MPLoadIcons;
+        public static bool MPLoadIcons = true;
 
         public static void Getconfig()
         {
             Debug.Log("[Maritime Pack] : cfg file loading...");
-            PluginConfiguration cfg = PluginConfiguration.CreateForType<MPConfig>();
-            cfg.load();
-            MPWLog = cfg.GetValue<bool>("MPWLog", false);
-            KSPWLog = cfg.GetValue<bool>("KSPWLog", false);
-            MPDepthWarn = cfg.GetValue<bool>("MPDepthWarn", false);
-            MPMaxDepth = cfg.GetValue<float>("MPMaxDepth", 990.00f);
-            MPLoadIcons = cfg.GetValue<bool>("MPLoadIcons", true);
-            Debug.Log("[Maritime Pack] : cfg file loaded.");
+            try
+            {
+                PluginConfiguration cfg = PluginConfiguration.CreateForType<MPConfig>();
+                cfg.load();
+                MPWLog = cfg.GetValue<bool>("MPWLog", false);
+                KSPWLog = cfg.GetValue<bool>("KSPWLog", false);
+                MPDepthWarn = cfg.GetValue<bool>("MPDepthWarn", false);
+                MPMaxDepth = cfg.GetValue<float>("MPMaxDepth", 990.00f);
+                MPLoadIcons = cfg.GetValue<bool>("MPLoadIcons", true);
+                Debug.Log("[Maritime Pack] : cfg file loaded.");
+            }
+            catch (Exception ex)
+            {
+                // keep the defaults (no file logging, icons on) instead of aborting MPStartup
+                Debug.LogWarning("[Maritime Pack] : cfg file could not be read, using defaults: " + ex.Message);
+            }
         }
     }
 
@@ -295,6 +326,8 @@ namespace MPUtils
 
         public static Part GetResourcePart(Vessel v, string resourceName)
         {
+            if (v == null || v.parts == null || string.IsNullOrEmpty(resourceName))
+                return null;
             foreach (Part mypart in v.parts)
             {
                 if (mypart.Resources.Contains(resourceName))
@@ -345,8 +378,9 @@ namespace MPUtils
 
         public static double GetResourceTotal(Vessel v, string resourceName)
         {
-            PartResourceDefinition resource = PartResourceLibrary.Instance.GetDefinition(resourceName);
             double amount = 0;
+            if (v == null || v.parts == null || string.IsNullOrEmpty(resourceName))
+                return amount;
             foreach (Part mypart in v.parts)
             {
                 if (mypart.Resources.Contains(resourceName))
@@ -359,13 +393,15 @@ namespace MPUtils
 
         public static double GetResourceMax(Vessel v, string resourceName)
         {
-            PartResourceDefinition resource = PartResourceLibrary.Instance.GetDefinition(resourceName);
             double amount = 0;
+            if (v == null || v.parts == null || string.IsNullOrEmpty(resourceName))
+                return amount;
             foreach (Part mypart in v.parts)
             {
-                if (mypart.Resources.Contains(resourceName))
+                PartResource res = GetPartResource(mypart, resourceName);
+                if (res != null)
                 {
-                    amount += mypart.Resources.Get(resource.id).maxAmount;
+                    amount += res.maxAmount;
                 }
             }
             return amount;
@@ -373,34 +409,53 @@ namespace MPUtils
 
         public static double GetPitch(Vessel thisVessel)
         {
+            if (thisVessel == null) return 0;
             var pitch = Vector3d.Angle(FlightGlobals.upAxis, thisVessel.transform.up);
             return pitch;
         }
 
+        // Returns the resource id, or -1 when the resource is not defined (e.g. a config names a
+        // resource from a mod that is not installed). Previously this threw a NullReferenceException.
         public static int GetResourceID(this Part part, string resourceName)
         {
+            if (string.IsNullOrEmpty(resourceName) || PartResourceLibrary.Instance == null) return -1;
             PartResourceDefinition resource = PartResourceLibrary.Instance.GetDefinition(resourceName);
-            return resource.id;
+            return resource != null ? resource.id : -1;
+        }
+
+        // Null-safe lookup of a part's PartResource by name.
+        public static PartResource GetPartResource(Part part, string resourceName)
+        {
+            if (part == null || part.Resources == null || string.IsNullOrEmpty(resourceName)) return null;
+            int id = GetResourceID(part, resourceName);
+            if (id == -1) return null;
+            return part.Resources.Get(id);
         }
 
         public static double GetResourceAmount(this Part part, string resourceName)
         {
-            PartResourceDefinition resource = PartResourceLibrary.Instance.GetDefinition(resourceName);
-            return part.Resources.Get(resource.id).amount;
+            PartResource res = GetPartResource(part, resourceName);
+            return res != null ? res.amount : 0;
         }
 
         public static double GetResourceSpace(this Part part, string resourceName)
         {
-            PartResourceDefinition resource = PartResourceLibrary.Instance.GetDefinition(resourceName);
-            double amt = part.Resources.Get(resource.id).amount;
-            double max = part.Resources.Get(resource.id).maxAmount;
-            return max - amt;
+            PartResource res = GetPartResource(part, resourceName);
+            return res != null ? res.maxAmount - res.amount : 0;
         }
 
         public static double findAltitude(Transform aLocation)
         {
             if (FlightGlobals.ActiveVessel == null) return 0;
-            return Vector3.Distance(aLocation.position, FlightGlobals.ActiveVessel.mainBody.position) - (FlightGlobals.ActiveVessel.mainBody.Radius);
+            return findAltitude(aLocation, FlightGlobals.ActiveVessel.mainBody);
+        }
+
+        // Altitude of a transform above sea level of the given body (use the part's own vessel body,
+        // not the active vessel's: they differ when the module runs on a non-active vessel).
+        public static double findAltitude(Transform aLocation, CelestialBody body)
+        {
+            if (aLocation == null || body == null) return 0;
+            return Vector3.Distance(aLocation.position, body.position) - body.Radius;
         }
 
         public static double DegreeBearing(Vessel v,
@@ -418,7 +473,8 @@ namespace MPUtils
 
         public static string GetBody()
         {
-            var body = FlightGlobals.ActiveVessel.orbitDriver.referenceBody.GetName();
+            Vessel av = FlightGlobals.ActiveVessel;
+            var body = (av != null && av.orbitDriver != null && av.orbitDriver.referenceBody != null) ? av.orbitDriver.referenceBody.GetName() : null;
             if (body == null)
             {
                 body = "None";
@@ -560,6 +616,10 @@ namespace MPUtils
 
         public static string DepthBelowKeel(Vessel v)
         {
+            if (v == null)
+            {
+                return "n/a";
+            }
             if (Math.Abs(v.terrainAltitude) > 1000)
             {
                 return "> 1000 m";

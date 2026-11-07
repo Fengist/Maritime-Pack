@@ -110,7 +110,10 @@ namespace MPUtils
 
             print(categoryTitle + "  Filter Count: " + parts.Count);
             if (parts.Count > 0)
+            {
+                GameEvents.onGUIEditorToolbarReady.Remove(SubCategories); // never register twice
                 GameEvents.onGUIEditorToolbarReady.Add(SubCategories);
+            }
         }
 
         private bool EditorItemsFilter(AvailablePart avPart)
@@ -120,9 +123,24 @@ namespace MPUtils
 
         private void SubCategories()
         {
-            var icon = GenIcon(categoryTitle);
-            var filter = PartCategorizer.Instance.filters.Find(f => f.button.categorydisplayName == "#autoLOC_453547");//change for 1.3.1
-            PartCategorizer.AddCustomSubcategoryFilter(filter, categoryTitle, categoryTitle, icon, EditorItemsFilter);            
+            // This handler stays subscribed after the (once-only) addon object is destroyed, so it must
+            // not rely on Unity state, and it must survive a missing category instead of throwing.
+            try
+            {
+                if (PartCategorizer.Instance == null || PartCategorizer.Instance.filters == null) return;
+                var filter = PartCategorizer.Instance.filters.Find(f => f != null && f.button != null && f.button.categorydisplayName == "#autoLOC_453547");//change for 1.3.1
+                if (filter == null)
+                {
+                    Debug.LogWarning("[Maritime Pack] 'Filter by Function' category not found; skipping " + categoryTitle + " subcategory");
+                    return;
+                }
+                var icon = GenIcon(categoryTitle);
+                PartCategorizer.AddCustomSubcategoryFilter(filter, categoryTitle, categoryTitle, icon, EditorItemsFilter);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError("[Maritime Pack] Failed to add editor subcategory " + categoryTitle + ": " + ex);
+            }
         }
 
         private Icon GenIcon(string iconName)
@@ -131,16 +149,28 @@ namespace MPUtils
             var normIconFile = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), iconName + "_off.png"); // icon to be present in same folder as dll
             var selIconFile = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), iconName + "_on.png");// icon to be present in same folder as dll
 
-            WWW www = new WWW(normIconFile);
-            www.LoadImageIntoTexture(normIcon);
-            normIcon.Apply();
-            www = new WWW(normIconFile);
-            www.LoadImageIntoTexture(selIcon);
-            selIcon.Apply();
-            www.Dispose();
+            // was: new WWW(<plain file path>) (no file:// scheme, so nothing loaded) and the "on" icon was
+            // read from the "_off" file. Read the PNGs directly instead.
+            LoadPng(normIcon, normIconFile);
+            LoadPng(selIcon, File.Exists(selIconFile) ? selIconFile : normIconFile);
 
             var icon = new Icon(iconName + "Icon", normIcon, selIcon);
             return icon;
+        }
+
+        private static void LoadPng(Texture2D tex, string file)
+        {
+            try
+            {
+                if (File.Exists(file))
+                {
+                    ImageConversion.LoadImage(tex, File.ReadAllBytes(file));
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning("[Maritime Pack] Could not load icon " + file + ": " + ex.Message);
+            }
         }
     }
 

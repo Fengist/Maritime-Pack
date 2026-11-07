@@ -26,14 +26,19 @@ namespace MPUtils
 
         public void FixedUpdate()
         {
+            // was: ran in the editor too, where FlightGlobals.ActiveVessel is null -> NullReferenceException
+            if (!HighLogic.LoadedSceneIsFlight || this.vessel == null)
+            {
+                return;
+            }
             varPeriod -= Time.deltaTime;
             if (varPeriod < 0)
             {
                 varPeriod = decayPeriod;
-                resPart = MPFunctions.GetResourcePart(FlightGlobals.ActiveVessel, resourceName);
+                resPart = MPFunctions.GetResourcePart(this.vessel, resourceName);
                 resID = MPFunctions.GetResourceID(resPart, resourceName);
-                resAmt = MPFunctions.GetResourceTotal(FlightGlobals.ActiveVessel, resourceName);
-                if (resPart != null && resAmt > 0)
+                resAmt = MPFunctions.GetResourceTotal(this.vessel, resourceName);
+                if (resPart != null && resAmt > 0 && resID != -1)
                 {
                     try
                     {

@@ -13,12 +13,13 @@ namespace MPUtils
 
         public override void OnStart(StartState state)
         {
-            MPLog.Writelog("[Maritime Pack] (SolarSteam) FCWSolarSteam Found on " + this.vessel.name);
+            if (this.vessel != null) // vessel is null in the editor
+                MPLog.Writelog("[Maritime Pack] (SolarSteam) FCWSolarSteam Found on " + this.vessel.name);
         }
 
         public void FixedUpdate()
         {
-            if (!HighLogic.LoadedSceneIsFlight)
+            if (!HighLogic.LoadedSceneIsFlight || this.vessel == null)
             {
                 return;
             }
@@ -49,11 +50,14 @@ namespace MPUtils
                             float thisflow = (M as ModuleDeployableSolarPanel).flowRate;
                             if (thisflow > 0)
                             {
-                                Part sPart = MPFunctions.GetResourcePart(FlightGlobals.ActiveVessel, "CompressedWater");
+                                // use this vessel (was the active vessel, which may not carry the resources at all)
+                                Part sPart = MPFunctions.GetResourcePart(this.vessel, "CompressedWater");
                                 int CWID = MPFunctions.GetResourceID(sPart, "CompressedWater");
+                                if (sPart == null || CWID == -1) return;
                                 double CWFlow = sPart.RequestResource(CWID, thisflow * CWRate, ResourceFlowMode.ALL_VESSEL);
-                                sPart = MPFunctions.GetResourcePart(FlightGlobals.ActiveVessel, "ElectricCharge");
+                                sPart = MPFunctions.GetResourcePart(this.vessel, "ElectricCharge");
                                 int EcID = MPFunctions.GetResourceID(sPart, "ElectricCharge");
+                                if (sPart == null || EcID == -1) return;
                                 sPart.RequestResource(EcID, CWFlow * elRate, ResourceFlowMode.ALL_VESSEL);
                             }
                         }

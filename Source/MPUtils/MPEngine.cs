@@ -26,18 +26,18 @@ namespace MPUtils
             {
                 return;
             }
-            MPLog.Writelog("[Maritime Pack] (MPEngine) MPEngine Found" + this.vessel.name);
+            MPLog.Writelog("[Maritime Pack] (MPEngine) MPEngine Found" + (this.vessel != null ? this.vessel.vesselName : "?"));
         }
 
         public void FixedUpdate()
         {
-            if (!HighLogic.LoadedSceneIsFlight)
+            if (!HighLogic.LoadedSceneIsFlight || this.vessel == null)
             {
                 return;
             }
             if (shutdownUnder == true) //shut down a submerged engine
             {
-                if (this.part.WaterContact && MPFunctions.findAltitude(this.part.transform) <= -1)
+                if (this.part.WaterContact && MPFunctions.findAltitude(this.part.transform, this.vessel.mainBody) <= -1) // own body, not the active vessel's
                 {
                     for (int i = this.part.Modules.Count - 1; i >= 0; --i)
                     {

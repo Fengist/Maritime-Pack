@@ -31,17 +31,18 @@ namespace MPUtils
 
         public void FixedUpdate()
         {
-            if (!HighLogic.LoadedSceneIsFlight)
+            if (!HighLogic.LoadedSceneIsFlight || this.vessel == null || string.IsNullOrEmpty(resourceName))
             {
                 return;
             }
             double kw = Math.Abs(this.part.thermalRadiationFlux);
-            Part rPart = MPFunctions.GetResourcePart(FlightGlobals.ActiveVessel, resourceName);
-            if (rPart != null)
-            { 
-                int id = MPFunctions.GetResourceID(rPart, resourceName);
-                double rTotal = MPFunctions.GetResourceTotal(FlightGlobals.ActiveVessel, resourceName);
-                double rMax = MPFunctions.GetResourceMax(FlightGlobals.ActiveVessel, resourceName);
+            // use this part's vessel, not the active vessel
+            Part rPart = MPFunctions.GetResourcePart(this.vessel, resourceName);
+            int id = MPFunctions.GetResourceID(rPart, resourceName);
+            if (rPart != null && id != -1)
+            {
+                double rTotal = MPFunctions.GetResourceTotal(this.vessel, resourceName);
+                double rMax = MPFunctions.GetResourceMax(this.vessel, resourceName);
                 transAmt = resourceAmt * kw;
                     if (actRad == true) // look for active radiator
                     {

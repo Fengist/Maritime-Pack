@@ -51,11 +51,12 @@ namespace MPUtils
             base.OnStart(state);
             //defaultMinDrag = part.minimum_drag;
             //defaultMaxDrag = part.maximum_drag;
-            if (forcePointName != string.Empty)
+            // forcePointName is null (not string.Empty) when the cfg does not set it.
+            if (!string.IsNullOrEmpty(forcePointName))
             {
                 forcePoint = part.FindModelTransform(forcePointName);
             }
-            if (forcePointName == string.Empty || forcePoint == null)
+            if (string.IsNullOrEmpty(forcePointName) || forcePoint == null)
             {
                 forcePoint = part.transform;
             }
@@ -64,7 +65,7 @@ namespace MPUtils
                 //Events["increaseBuoyancyEvent"].guiActive = true;
                 //Events["decreaseBuoyancyEvent"].guiActive = true;
                 Fields["buoyancyForce"].guiActive = true;
-                if (forcePointName != string.Empty)
+                if (!string.IsNullOrEmpty(forcePointName))
                 {
                     //Events["increaseBuoyancyEvent"].guiName = "increase buoy " + forcePointName;
                     //Events["decreaseBuoyancyEvent"].guiName = "decrease buoy " + forcePointName;
@@ -77,7 +78,17 @@ namespace MPUtils
         {
             if (!HighLogic.LoadedSceneIsFlight)
                 return;
-            if (vessel.mainBody.ocean && part.GetComponent<Rigidbody>() != null)
+            // KSP runs Unity FixedUpdate on modules before Part.Start has called OnStart, and during
+            // vessel splits / part destruction (common in BDArmory fights) vessel or the rigidbody
+            // can be missing for a frame. Every one of these used to throw a NullReferenceException.
+            if (vessel == null || vessel.mainBody == null || part == null || part.packed)
+                return;
+            Rigidbody rb = part.rb != null ? part.rb : part.GetComponent<Rigidbody>();
+            if (rb == null)
+                return;
+            if (forcePoint == null)
+                forcePoint = part.transform;
+            if (vessel.mainBody.ocean)
             {
                 if (part.partBuoyancy != null)
                 {
@@ -93,37 +104,39 @@ namespace MPUtils
 
                     if (floatMultiplier > 0f)
                     {
-                        Vector3d up = (this.vessel.GetComponent<Rigidbody>().position - this.vessel.mainBody.position).normalized;
+                        // was: vessel.GetComponent<Rigidbody>() (the root part's rigidbody), which is null while the
+                        // root part is being destroyed or replaced. The local "up" at the force point is equivalent.
+                        Vector3d up = ((Vector3d)forcePoint.position - vessel.mainBody.position).normalized;
                         Vector3d uplift = up * buoyancyForce * floatMultiplier;
 
-                        //float relativeDirection = Vector3.Dot(vessel.GetComponent<Rigidbody>().velocity.normalized, up);                        
+                        //float relativeDirection = Vector3.Dot(vessel.GetComponent<Rigidbody>().velocity.normalized, up);
 
                         if (vessel.verticalSpeed < maxVerticalSpeed) // || relativeDirection < 0f) // if you are going down, apply force regardless, of going up, limit up speed
                         {
-                            this.part.GetComponent<Rigidbody>().AddForceAtPosition(uplift, forcePoint.position);
+                            rb.AddForceAtPosition(uplift, forcePoint.position);
                         }
                     }
 
                     // set water drag
 
-                    part.GetComponent<Rigidbody>().drag = dragInWater;
+                    rb.drag = dragInWater;
 
                     // splashed status
 
                     splashed = true;
                     part.WaterContact = true;
-                    part.vessel.Splashed = true;
+                    vessel.Splashed = true;
 
                     // part destruction
 
-                    if (base.GetComponent<Rigidbody>().velocity.magnitude > waterImpactTolerance)
+                    if (rb.velocity.magnitude > waterImpactTolerance)
                     {
-                        GameEvents.onCrashSplashdown.Fire(new EventReport(FlightEvents.SPLASHDOWN_CRASH, this.part, this.part.partInfo.title, "ocean", 0, "FSbuoyancy: Hit the water too hard"));
+                        GameEvents.onCrashSplashdown.Fire(new EventReport(FlightEvents.SPLASHDOWN_CRASH, this.part, this.part.partInfo != null ? this.part.partInfo.title : this.part.name, "ocean", 0, "FSbuoyancy: Hit the water too hard"));
                         this.part.Die();
                         return;
                     }
 
-                    //FX                
+                    //FX
 
                     if (splashFXEnabled)
                     {
@@ -131,11 +144,11 @@ namespace MPUtils
                         if (splashTimer <= 0f)
                         {
                             splashTimer = splashCooldown;
-                            if (base.GetComponent<Rigidbody>().velocity.magnitude > 6f && partAltitude > -buoyancyRange) // don't splash if you are deep in the water or going slow
+                            if (rb.velocity.magnitude > 6f && partAltitude > -buoyancyRange) // don't splash if you are deep in the water or going slow
                             {
                                 if (Vector3.Distance(base.transform.position, FlightGlobals.camera_position) < 500f)
                                 {
-                                    FXMonger.Splash(base.transform.position, base.GetComponent<Rigidbody>().velocity.magnitude / 50f);
+                                    FXMonger.Splash(base.transform.position, rb.velocity.magnitude / 50f);
                                 }
                             }
                         }
@@ -149,10 +162,10 @@ namespace MPUtils
                         splashed = false;
 
                         // set air drag
-                        part.GetComponent<Rigidbody>().drag = 0f;
+                        rb.drag = 0f;
 
                         part.WaterContact = false;
-                        part.vessel.checkSplashed();
+                        vessel.checkSplashed();
                     }
                 }
             }

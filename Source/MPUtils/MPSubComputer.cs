@@ -26,24 +26,58 @@ namespace MPUtils
 
         public void Start()
         {
-            if (HighLogic.LoadedSceneIsFlight)
+            if (HighLogic.LoadedSceneIsFlight && this.vessel != null)
             {
-                foreach (Part mypart in this.vessel.parts)
-                {
-                    if (mypart.Resources.Contains("CompressedWater"))
-                    {
-                        if (rescount == 0)
-                        { Part1 = mypart; }
-                        if (rescount == 1)
-                        { Part2 = mypart; }
-                        rescount++;
-                    }
-                }
-                MPLog.Writelog("[Maritime Pack] Compressed Water Found: " + rescount);
+                FindTanks();
                 id = MPFunctions.GetResourceID(Part1, "CompressedWater");
                 batid = MPFunctions.GetResourceID(Part1, "ElectricCharge");
                 vesselvolume = MPFunctions.GetVolume(this.vessel);
             }
+        }
+
+        // Locate the (first) two CompressedWater ballast tanks on this vessel.
+        private void FindTanks()
+        {
+            Part1 = null;
+            Part2 = null;
+            rescount = 0;
+            if (this.vessel == null || this.vessel.parts == null) return;
+            foreach (Part mypart in this.vessel.parts)
+            {
+                if (mypart != null && mypart.Resources.Contains("CompressedWater"))
+                {
+                    if (rescount == 0)
+                    { Part1 = mypart; }
+                    if (rescount == 1)
+                    { Part2 = mypart; }
+                    rescount++;
+                }
+            }
+            MPLog.Writelog("[Maritime Pack] Compressed Water Found: " + rescount);
+        }
+
+        // AutoKeel/AutoBuoy/Blow Ballast need two ballast tanks that are still part of this vessel.
+        // Tanks can be destroyed, decoupled or undocked at any time; re-scan before giving up.
+        private bool TanksValid()
+        {
+            if (TanksOk()) return true;
+            FindTanks();
+            return TanksOk();
+        }
+
+        private bool TanksOk()
+        {
+            return Part1 != null && Part2 != null && Part1 != Part2 && Part1.vessel == this.vessel && Part2.vessel == this.vessel;
+        }
+
+        private void StopAutoModes(string reason)
+        {
+            Events["BuoyDeactivate"].active = false;
+            Events["BuoyActivate"].active = true;
+            Events["KeelActivate"].active = true;
+            Events["KeelDeactivate"].active = false;
+            ScreenMessages.PostScreenMessage("[Dive Computer] " + reason, 5f, ScreenMessageStyle.UPPER_CENTER);
+            MPLog.Writelog("[Maritime Pack] Sub Computer: " + reason);
         }
 
 
@@ -79,7 +113,15 @@ namespace MPUtils
         [KSPEvent(guiActive = true, guiName = "Blow Ballast")]
         public void BlowBallast()
         {
+            if (!HighLogic.LoadedSceneIsFlight) return;
+            if (!TanksValid())
+            {
+                // was: NullReferenceException when the vessel did not have exactly two ballast tanks
+                ScreenMessages.PostScreenMessage("[Dive Computer] Blow Ballast needs two CompressedWater ballast tanks.", 5f, ScreenMessageStyle.UPPER_CENTER);
+                return;
+            }
             int id = MPFunctions.GetResourceID(Part1, "CompressedWater");
+            if (id == -1) return;
             Part1.TransferResource(id, -MPFunctions.GetResourceAmount(Part1, "CompressedWater"));
             Part2.TransferResource(id, -MPFunctions.GetResourceAmount(Part2, "CompressedWater"));
         }
@@ -103,7 +145,13 @@ namespace MPUtils
 
         public override void OnUpdate()
         {
-            if (!HighLogic.LoadedSceneIsFlight && rescount != 2) return;
+            // was: "!HighLogic.LoadedSceneIsFlight && rescount != 2", which never returned in flight, so
+            // AutoKeel/AutoBuoy dereferenced Part1/Part2 every frame on vessels without two ballast tanks.
+            if (!HighLogic.LoadedSceneIsFlight || this.vessel == null) return;
+            if ((Events["BuoyDeactivate"].active || Events["KeelDeactivate"].active) && !TanksValid())
+            {
+                StopAutoModes("AutoKeel/AutoBuoy need two CompressedWater ballast tanks on this vessel.");
+            }
             {
                 //Computer Power Drain
                 if (Events["BuoyDeactivate"].active || Events["KeelDeactivate"].active || Events["InfoDeactivate"].active)
@@ -123,9 +171,10 @@ namespace MPUtils
                     if (batterycheck < 0)
                     {
                         double rFlow = 0.0f;
-                        Part rPart = MPFunctions.GetResourcePart(FlightGlobals.ActiveVessel, "ElectricCharge");
-                        double rTotal = MPFunctions.GetResourceTotal(FlightGlobals.ActiveVessel, "ElectricCharge");
-                        if (rPart != null && rTotal >= rConsume)
+                        // use this vessel, not whichever vessel happens to be active
+                        Part rPart = MPFunctions.GetResourcePart(this.vessel, "ElectricCharge");
+                        double rTotal = MPFunctions.GetResourceTotal(this.vessel, "ElectricCharge");
+                        if (rPart != null && rTotal >= rConsume && batid != -1)
                         {
                             rFlow = rPart.RequestResource(batid,rConsume,ResourceFlowMode.ALL_VESSEL);
                             goodcheck = true;
@@ -170,7 +219,7 @@ namespace MPUtils
                             {
                                 Part2.TransferResource(id, transferamount);
                             }
-                            else if (p1amount > 0)
+                            else if (p2amount > 0)
                             {
                                 Part2.TransferResource(id, -p2amount);
                             }
@@ -192,7 +241,7 @@ namespace MPUtils
                             {
                                 Part2.TransferResource(id, transferamount);
                             }
-                            else if (p1amount > 0)
+                            else if (p2amount > 0)
                             {
                                 Part2.TransferResource(id, p2amount);
                             }
@@ -244,8 +293,8 @@ namespace MPUtils
                             if (transferamount < 0.01f)
                             { transferamount = 0.01f; }
                             MPLog.Writelog("[Maritime Pack] Pitch: " + pitch);
-                            alt1 = MPFunctions.findAltitude(Part1.transform);
-                            alt2 = MPFunctions.findAltitude(Part2.transform);
+                            alt1 = MPFunctions.findAltitude(Part1.transform, this.vessel.mainBody); // own body, not the active vessel's
+                            alt2 = MPFunctions.findAltitude(Part2.transform, this.vessel.mainBody);
                             MPLog.Writelog("[Maritime Pack] Autokeel Running: Alt1:" + alt1 + " Alt2:" + alt2 + " Amt: " + transferamount);
                             if (Math.Abs(alt1 - alt2) < 1.0f)
                             {
