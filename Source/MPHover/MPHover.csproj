@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- MPHover for KSP 1.12.x. Shared settings and KSP references: ..\Directory.Build.props -->
+  <PropertyGroup>
+    <AssemblyName>MPHover</AssemblyName>
+    <RootNamespace>MPHover</RootNamespace>
+  </PropertyGroup>
+</Project>
