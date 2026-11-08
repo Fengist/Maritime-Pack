@@ -104,6 +104,7 @@ namespace MPHover
         private float hoverHeight = 0f;
         public AnimationCurve thrustCurve;
         public AnimationCurve thrustToNegate;
+        private bool curvesBuilt = false;
 
 
         public static float CalculateHoverHeight(Vector3 LiftPos)
@@ -307,6 +308,15 @@ namespace MPHover
                 totalHeight += CalculateHoverHeight(transformList[i].position);
             }
             float aveHeight = totalHeight / transformList.Count;
+            // Both curves are constant. They used to be rebuilt (two AnimationCurve allocations) for every
+            // lift point on every physics frame.
+            if (!curvesBuilt)
+            {
+                thrustCurve = AnimationCurve.EaseInOut(0f, 1f, maxHoverDist, 0.0f);
+                thrustCurve.AddKey(new Keyframe(maxHoverDist * 0.8f, 0.9f));
+                thrustToNegate = AnimationCurve.EaseInOut(-0.001f, -1, 0.001f, 1);
+                curvesBuilt = true;
+            }
             for (int i = 0; i < transformList.Count; i++)
             {
                 rb = rbList[i];
@@ -323,12 +333,9 @@ namespace MPHover
                 //Debug.Log("HN :" + heightNeeded);
                 ////thrust needed
 
-                thrustCurve = AnimationCurve.EaseInOut(0f, 1f, maxHoverDist, 0.0f);
-                thrustCurve.AddKey(new Keyframe(maxHoverDist * 0.8f, 0.9f));
                 thrustToAdd = thrustCurve.Evaluate(hoverHeight) * (totalThrust / transformList.Count);
                 //Debug.Log("Eval :" + thrustCurve.Evaluate(hoverHeight));
 
-                thrustToNegate = AnimationCurve.EaseInOut(-0.001f, -1, 0.001f, 1);
                 var reverseThrust = thrustToNegate.Evaluate((float)heightChange);
                 if (hoverHeight < maxHoverDist)
                 {

@@ -201,9 +201,21 @@ public class MPengineSounds : PartModule
 		paused = false;
 	}
 
+	public override void OnAwake()
+	{
+		base.OnAwake();
+		// OnGUI below only draws in the debug modes and uses GUI, not GUILayout. With the default
+		// useGUILayout = true Unity still runs a layout pass for every engine part every frame (two
+		// GUILayoutGroup allocations per part per frame) and keeps a layout cache per part instance
+		// for the rest of the session.
+		useGUILayout = false;
+	}
+
 	public override void OnStart(StartState state)
 	{
-		((PartModule)this).OnStart(state);
+		// was: ((PartModule)this).OnStart(state), which compiles to a virtual call back into this
+		// override (endless recursion -> StackOverflowException logged for every part, module never set up).
+		base.OnStart(state);
 		// FXGroup fields are normally created by Unity serialization when the part is instantiated;
 		// make sure they exist so createGroup can never be handed a null group.
 		if (engageGroup == null)
@@ -260,7 +272,7 @@ public class MPengineSounds : PartModule
 
 	public void FixedUpdate()
 	{
-		((PartModule)this).OnFixedUpdate();
+		base.OnFixedUpdate();
 		if (!HighLogic.LoadedSceneIsFlight || engine == null || (UnityEngine.Object)(object)((PartModule)this).part == (UnityEngine.Object)null)
 		{
 			return;

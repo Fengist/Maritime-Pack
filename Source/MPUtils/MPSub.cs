@@ -105,6 +105,8 @@ namespace MPUtils
 
         private double messageDelay = 0.0f;
 
+        private double lastSPressure = double.NaN; // value sPressure was last built from
+
         public override void OnStart(StartState state)
         {
 
@@ -235,6 +237,12 @@ namespace MPUtils
                 {
                     maxSPressure = thisp;
                 }
+            }
+            // was formatted inside the loop above: a string.Format, boxing and concatenation for every part
+            // of the vessel on every physics frame. Same final value, now built once and only when it changes.
+            if (this.vessel.parts.Count > 0 && maxSPressure != lastSPressure)
+            {
+                lastSPressure = maxSPressure;
                 sPressure = string.Format("{0:0.00}", (maxSPressure * 100)) + " kPa";
             }
 

@@ -111,9 +111,18 @@ namespace MPUtils
             print(categoryTitle + "  Filter Count: " + parts.Count);
             if (parts.Count > 0)
             {
+                // This once-only addon owns a handler that must run on every editor visit. Keep the owner
+                // alive instead of leaving the handler on a destroyed MonoBehaviour (reported as a leak by
+                // KSPCommunityFixes on every scene switch).
+                DontDestroyOnLoad(gameObject);
                 GameEvents.onGUIEditorToolbarReady.Remove(SubCategories); // never register twice
                 GameEvents.onGUIEditorToolbarReady.Add(SubCategories);
             }
+        }
+
+        void OnDestroy()
+        {
+            GameEvents.onGUIEditorToolbarReady.Remove(SubCategories);
         }
 
         private bool EditorItemsFilter(AvailablePart avPart)
@@ -123,8 +132,7 @@ namespace MPUtils
 
         private void SubCategories()
         {
-            // This handler stays subscribed after the (once-only) addon object is destroyed, so it must
-            // not rely on Unity state, and it must survive a missing category instead of throwing.
+            // Runs on every editor visit; it must survive a missing category instead of throwing.
             try
             {
                 if (PartCategorizer.Instance == null || PartCategorizer.Instance.filters == null) return;
@@ -143,18 +151,29 @@ namespace MPUtils
             }
         }
 
+        // Created on the first editor visit and reused afterwards (was: two new Texture2Ds per filter on
+        // every editor visit, never destroyed).
+        private Texture2D normIconTex, selIconTex;
+
         private Icon GenIcon(string iconName)
         {
-            Texture2D normIcon = new Texture2D(32, 32, TextureFormat.RGBA32, false), selIcon = new Texture2D(32, 32, TextureFormat.RGBA32, false);
             var normIconFile = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), iconName + "_off.png"); // icon to be present in same folder as dll
             var selIconFile = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), iconName + "_on.png");// icon to be present in same folder as dll
 
             // was: new WWW(<plain file path>) (no file:// scheme, so nothing loaded) and the "on" icon was
             // read from the "_off" file. Read the PNGs directly instead.
-            LoadPng(normIcon, normIconFile);
-            LoadPng(selIcon, File.Exists(selIconFile) ? selIconFile : normIconFile);
+            if (normIconTex == null)
+            {
+                normIconTex = new Texture2D(32, 32, TextureFormat.RGBA32, false);
+                LoadPng(normIconTex, normIconFile);
+            }
+            if (selIconTex == null)
+            {
+                selIconTex = new Texture2D(32, 32, TextureFormat.RGBA32, false);
+                LoadPng(selIconTex, File.Exists(selIconFile) ? selIconFile : normIconFile);
+            }
 
-            var icon = new Icon(iconName + "Icon", normIcon, selIcon);
+            var icon = new Icon(iconName + "Icon", normIconTex, selIconTex);
             return icon;
         }
 

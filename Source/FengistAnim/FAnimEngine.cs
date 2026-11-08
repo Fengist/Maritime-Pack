@@ -90,6 +90,23 @@ public class FAnimEngine : PartModule
 
 	private bool loadComplete = false;
 
+	private Animation playAnimator;
+
+	private string playAnimatorName;
+
+	// Play_Anim runs every physics frame; part.FindModelAnimators allocates new arrays on every call.
+	// The model's animators do not change, so look the first one up once per animation name.
+	private Animation GetPlayAnimator(string aname)
+	{
+		if (playAnimatorName != aname || (Object)(object)playAnimator == (Object)null)
+		{
+			Animation[] array = ((PartModule)this).part.FindModelAnimators(aname);
+			playAnimator = ((array.Length != 0) ? array[0] : null);
+			playAnimatorName = aname;
+		}
+		return playAnimator;
+	}
+
 	public void Play_Anim(string aname, float aspeed, float atime = 0f)
 	{
 		logdelay -= Time.deltaTime;
@@ -108,10 +125,9 @@ public class FAnimEngine : PartModule
 		}
 		try
 		{
-			Animation[] array = ((PartModule)this).part.FindModelAnimators(aname);
-			if (array.Length != 0)
+			Animation val = GetPlayAnimator(aname);
+			if ((Object)(object)val != (Object)null)
 			{
-				Animation val = array[0];
 				val.clip = val.GetClip(animationName);
 				if (loopAnim)
 				{
@@ -220,7 +236,9 @@ public class FAnimEngine : PartModule
 
 	public override void OnStartFinished(StartState state)
 	{
-		((PartModule)this).OnStartFinished(state);
+		// was: ((PartModule)this).OnStartFinished(state), a virtual call back into this override (endless
+		// recursion -> StackOverflowException logged for every part, FAnimStartup never ran).
+		base.OnStartFinished(state);
 		FAnimStartup();
 		loadComplete = true;
 	}

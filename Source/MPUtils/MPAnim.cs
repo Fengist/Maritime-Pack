@@ -86,7 +86,22 @@ namespace MPUtils
         private float lastThrottle = 0;  //tracks the last throttle position. Always 0 or 1 for non sync'd engines
         private Quaternion startRotation = new Quaternion(0, 0, 0, 0);
         private float lastdirection = 1.0f;
-        
+        private Animation playAnimator = null;
+        private string playAnimatorName = null;
+
+        // Play_Anim runs every physics frame; part.FindModelAnimators allocates new arrays on every call.
+        // The model's animators do not change, so look the first one up once per animation name.
+        private Animation GetPlayAnimator(string aname)
+        {
+            if (playAnimatorName != aname || playAnimator == null)
+            {
+                Animation[] animators = part.FindModelAnimators(aname);
+                playAnimator = animators.Length > 0 ? animators[0] : null;
+                playAnimatorName = aname;
+            }
+            return playAnimator;
+        }
+
         public void Play_Anim(string aname, float aspeed, float atime = 0.0f)
         {
             logdelay -= Time.deltaTime;
@@ -109,11 +124,9 @@ namespace MPUtils
             }
             try
             {
-                Animation anim;
-                Animation[] animators = part.FindModelAnimators(aname);
-                if (animators.Length > 0)
+                Animation anim = GetPlayAnimator(aname);
+                if (anim != null)
                 {
-                    anim = animators[0];
                     anim.clip = anim.GetClip(animationName);
                     if (loopAnim == true)
                     {
